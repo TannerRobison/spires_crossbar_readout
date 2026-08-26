@@ -20,5 +20,6 @@ double csr_row_dot(const struct csr_matrix *m, size_t row, const double *x);
 void   csr_spmv(const struct csr_matrix *m, const double *x, double *y);
 void   csr_scale(struct csr_matrix *m, double factor);
 double csr_spectral_radius(const struct csr_matrix *m, size_t n);
+double csr_spectral_radius_power_iteration(const struct csr_matrix *m, size_t n);
 
 #endif // SPARSE_H

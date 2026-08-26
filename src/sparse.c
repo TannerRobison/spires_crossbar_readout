@@ -1,4 +1,5 @@
 #include "sparse.h"
+#include "math_utils.h"
 #include <string.h>
 #include <math.h>
 #include <cblas.h>
@@ -89,8 +90,9 @@ void csr_scale(struct csr_matrix *m, double factor)
         cblas_dscal((int)m->nnz, factor, m->values, 1);
 }
 
-// Power iteration to estimate spectral radius (mirrors math_utils.c:calc_spectral_radius)
-double csr_spectral_radius(const struct csr_matrix *m, size_t n)
+// Power iteration to estimate spectral radius.
+// Only converges when the dominant eigenvalue is real; kept for reference.
+double csr_spectral_radius_power_iteration(const struct csr_matrix *m, size_t n)
 {
     const unsigned int max_iter = 1000;
     const double tol = 1e-6;
@@ -124,4 +126,20 @@ double csr_spectral_radius(const struct csr_matrix *m, size_t n)
     }
 
     return lambda_new;
+}
+
+struct csr_matvec_ctx {
+    const struct csr_matrix *m;
+};
+
+static void csr_matvec(void *ctx, const double *x, double *y)
+{
+    csr_spmv(((const struct csr_matvec_ctx *)ctx)->m, x, y);
+}
+
+double csr_spectral_radius(const struct csr_matrix *m, size_t n)
+{
+    (void)n;    /* n == m->n; kept for call-site compatibility */
+    struct csr_matvec_ctx ctx = { m };
+    return spectral_radius_arnoldi(csr_matvec, &ctx, m->n);
 }
