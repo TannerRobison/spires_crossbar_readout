@@ -399,22 +399,22 @@ int init_weights(struct reservoir *reservoir)
         case SMALL_WORLD: {
             /* Watts–Strogatz on a directed ring:
              * - base out-degree K approximates density: K = round(connectivity * (n-1))
-             * - ensure K >= 2 and even
+             * - ensure K >= 1
              * - rewire each ring edge with probability p = 0.1 (tweak if you like)
              */
             size_t n = reservoir->num_neurons;
             if (n < 3) break;
 
             int K = (int)((reservoir->connectivity) * (double)(n - 1) + 0.5);
-            if (K < 2) K = 2;
-            if (K % 2) K++;             /* even */
+            if (K < 1) K = 1;
             if (K >= (int)n) K = (int)n - 1;
 
             double p = 0.1;             /* default WS rewiring prob */
-            /* 1) ring lattice: each i connects to K/2 forward neighbors (directed) */
-            int half = K / 2;
+            /* 1) ring lattice: each i connects to K forward neighbors (directed),
+             *    giving directed density K/(n-1) = connectivity, consistent with
+             *    RANDOM. The undirected projection is a WS lattice of degree 2K. */
             for (size_t i = 0; i < n; i++) {
-                for (int s = 1; s <= half; s++) {
+                for (int s = 1; s <= K; s++) {
                     size_t j = (i + (size_t)s) % n;   /* forward neighbor */
                     if (i == j) continue;
                     add_edge(W_dense, n, reservoir->ei_ratio, i, j);
@@ -422,7 +422,7 @@ int init_weights(struct reservoir *reservoir)
             }
             /* 2) rewire each (i -> i+s) with prob p to a random j != i, no duplicate edges */
             for (size_t i = 0; i < n; i++) {
-                for (int s = 1; s <= half; s++) {
+                for (int s = 1; s <= K; s++) {
                     size_t j_old = (i + (size_t)s) % n;
                     if (urand01() < p) {
                         /* drop old edge */
