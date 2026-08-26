@@ -361,3 +361,7 @@ size_t spires_num_outputs(const spires_reservoir *r);
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+## Acknowledgements
+
+This material is based on work supported by the National Science Foundation under grant no. 2318139.
