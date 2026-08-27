@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <time.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -42,20 +44,25 @@ spires_status spires_reservoir_create(const spires_reservoir_config *cfg,
     enum synapse_type stype = (enum synapse_type)cfg->synapse_type;
     enum synapse_backend sbackend = (enum synapse_backend)cfg->synapse_backend;
 
-    struct reservoir *impl = create_reservoir(cfg->num_neurons,
-                                              cfg->num_inputs,
-                                              cfg->num_outputs,
-                                              cfg->spectral_radius,
-                                              cfg->ei_ratio,
-                                              cfg->input_strength,
-                                              cfg->connectivity,
-                                              cfg->dt,           /* same dt flows to backend */
-                                              conn,
-                                              ntype,
-                                              cfg->neuron_params,
-                                              stype,
-                                              sbackend,
-                                              cfg->synapse_params);
+    struct reservoir_params params = {
+        .num_neurons       = cfg->num_neurons,
+        .num_inputs        = cfg->num_inputs,
+        .num_outputs       = cfg->num_outputs,
+        .spectral_radius   = cfg->spectral_radius,
+        .ei_ratio          = cfg->ei_ratio,
+        .input_strength    = cfg->input_strength,
+        .connectivity      = cfg->connectivity,
+        .dt                = cfg->dt,          /* same dt flows to backend */
+        .connectivity_type = conn,
+        .neuron_type       = ntype,
+        .neuron_params     = cfg->neuron_params,
+        .synapse_type      = stype,
+        .synapse_backend   = sbackend,
+        .synapse_params    = cfg->synapse_params,
+        .seed              = cfg->seed,
+    };
+
+    struct reservoir *impl = create_reservoir(&params);
     if (!impl)
         return SPIRES_ERR_INTERNAL;
 
@@ -112,6 +119,22 @@ double *spires_run(spires_reservoir *r, const double *input_series, size_t serie
 }
 
 
+
+/* Nondeterministic seed. Mixes wall-clock time with a stack address so that
+ * two processes starting in the same clock tick still differ. Deliberately
+ * not called anywhere internally -- the caller opts in. */
+uint64_t spires_random_seed(void)
+{
+    uint64_t t = (uint64_t)time(NULL);
+    uint64_t c = (uint64_t)clock();
+    uint64_t a = (uint64_t)(uintptr_t)&t;
+    uint64_t x = t ^ (c << 21) ^ (a << 32) ^ (a >> 17);
+    /* splitmix64 finaliser, so nearby inputs give well-separated seeds */
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
 
 /* --------------- training --------------- */
 spires_status spires_train_online(spires_reservoir *r,

@@ -288,7 +288,11 @@ int main(void) {
         .dt               = dt,
         .connectivity_type = SPIRES_CONN_SCALE_FREE,
         .neuron_type      = SPIRES_NEURON_FLIF_GL,
-        .neuron_params    = neuron_params
+        .neuron_params    = neuron_params,
+        /* A different network each run. Use a literal seed instead to make
+         * a result reproducible. srand() no longer affects SPIRES, only
+         * the dataset shuffle above. */
+        .seed             = spires_random_seed()
     };
 
     spires_reservoir *res = NULL;

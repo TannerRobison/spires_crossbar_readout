@@ -1,4 +1,5 @@
 #include "psc_heterogeneous.h"
+#include "rng.h"
 #include <string.h>
 #include <math.h>
 
@@ -13,9 +14,9 @@ struct psc_heterogeneous_synapse_data {
     double *trace;      // parallel to weights, mutable each micro-step
 };
 
-static inline double urand01(void)
+static inline double urand01(struct spires_rng *rng)
 {
-    return (double)rand() / (double)RAND_MAX;
+    return spires_rng_double(rng);
 }
 
 /* tau ~ log-uniform on [tau_min, tau_max]: log(tau) is uniform, so tau spans
@@ -23,15 +24,17 @@ static inline double urand01(void)
  * the way a plain linear Uniform[tau_min, tau_max] draw would -- appropriate
  * since synaptic/membrane time constants realistically span orders of
  * magnitude. */
-static inline double sample_log_uniform_tau(double tau_min, double tau_max)
+static inline double sample_log_uniform_tau(struct spires_rng *rng,
+                                            double tau_min, double tau_max)
 {
     double log_min = log(tau_min);
     double log_max = log(tau_max);
-    return exp(log_min + urand01() * (log_max - log_min));
+    return exp(log_min + urand01(rng) * (log_max - log_min));
 }
 
 static struct psc_heterogeneous_synapse_data *build(const double *dense, size_t n,
-                                                     const double *params, int is_sparse)
+                                                     const double *params, int is_sparse,
+                                                     struct spires_rng *rng)
 {
     double tau_min = params ? params[0] : 1.0;
     double tau_max = params ? params[1] : 1.0;
@@ -65,7 +68,7 @@ static struct psc_heterogeneous_synapse_data *build(const double *dense, size_t 
                 if (row[j] != 0.0) {
                     d->col_idx[idx] = j;
                     d->weights[idx] = row[j];
-                    d->tau[idx] = sample_log_uniform_tau(tau_min, tau_max);
+                    d->tau[idx] = sample_log_uniform_tau(rng, tau_min, tau_max);
                     idx++;
                 }
             }
@@ -78,7 +81,7 @@ static struct psc_heterogeneous_synapse_data *build(const double *dense, size_t 
         d->trace   = calloc(n * n, sizeof(double));
         for (size_t k = 0; k < n * n; k++) {
             d->weights[k] = dense[k];
-            d->tau[k] = sample_log_uniform_tau(tau_min, tau_max);
+            d->tau[k] = sample_log_uniform_tau(rng, tau_min, tau_max);
         }
     }
 
@@ -86,15 +89,17 @@ static struct psc_heterogeneous_synapse_data *build(const double *dense, size_t 
 }
 
 struct psc_heterogeneous_synapse_data *synapse_psc_heterogeneous_build_sparse(const double *dense, size_t n,
-                                                                               const double *params)
+                                                                               const double *params,
+                                                                               struct spires_rng *rng)
 {
-    return build(dense, n, params, 1);
+    return build(dense, n, params, 1, rng);
 }
 
 struct psc_heterogeneous_synapse_data *synapse_psc_heterogeneous_build_dense(const double *dense, size_t n,
-                                                                              const double *params)
+                                                                              const double *params,
+                                                                              struct spires_rng *rng)
 {
-    return build(dense, n, params, 0);
+    return build(dense, n, params, 0, rng);
 }
 
 void synapse_psc_heterogeneous_free(struct psc_heterogeneous_synapse_data *d)

@@ -3,6 +3,7 @@
 
 #include "neuron.h"
 #include "synapse.h"
+#include "rng.h"
 
 enum connectivity_type {
     RANDOM,
@@ -30,13 +31,36 @@ struct reservoir {
     enum synapse_backend synapse_backend;
     double *neuron_params;
     double *synapse_params;
+    uint64_t seed;              // seed this reservoir was built from
+    struct spires_rng rng;      // per-reservoir stream; replaces global rand()
 };
 
-struct reservoir* create_reservoir(
-    size_t num_neurons, size_t num_inputs, size_t num_outputs,
-    double spectral_radius, double ei_ratio, double input_strength, double connectivity, double dt,
-    enum connectivity_type connectivity_type, enum neuron_type neuron_type, double *neuron_params,
-    enum synapse_type synapse_type, enum synapse_backend synapse_backend, double *synapse_params);
+/* Construction parameters. Grouped so that adding one does not lengthen a
+ * positional argument list where same-typed arguments can be transposed
+ * silently. Mirrors spires_reservoir_config; the public API bridges between
+ * them in spires_api.c. */
+struct reservoir_params {
+    size_t num_neurons;
+    size_t num_inputs;
+    size_t num_outputs;
+    double spectral_radius;
+    double ei_ratio;
+    double input_strength;
+    double connectivity;
+    double dt;
+    enum connectivity_type connectivity_type;
+    enum neuron_type neuron_type;
+    double *neuron_params;
+    enum synapse_type synapse_type;
+    enum synapse_backend synapse_backend;
+    double *synapse_params;
+    /* Seed for this reservoir's own RNG. 0 is an ordinary seed, not a
+     * sentinel: construction is reproducible by default. Callers wanting a
+     * different network per run pass spires_random_seed(). */
+    uint64_t seed;
+};
+
+struct reservoir* create_reservoir(const struct reservoir_params *p);
 
 int compute_output(struct reservoir *reservoir, double *output_vector);
 double compute_activity(struct reservoir *reservoir);

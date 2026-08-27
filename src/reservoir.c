@@ -15,49 +15,50 @@
 
 /* **** create reservoir ***** */
 
-struct reservoir *create_reservoir(size_t num_neurons, size_t num_inputs, size_t num_outputs,
-                                double spectral_radius, double ei_ratio, double input_strength,
-                                double connectivity, double dt, enum connectivity_type connectivity_type,
-                                enum neuron_type neuron_type, double *neuron_params,
-                                enum synapse_type synapse_type, enum synapse_backend synapse_backend,
-                                double *synapse_params)
+struct reservoir *create_reservoir(const struct reservoir_params *p)
 {
+    if (p == NULL) {
+        fprintf(stderr, "Error creating reservoir. Parameters are NULL!\n");
+        return NULL;
+    }
 
     struct reservoir *reservoir = malloc(sizeof(*reservoir));
     if (reservoir == NULL) {
-        fprintf(stderr, "Error allocating memory for reservoir of size %zu\n", num_neurons);
+        fprintf(stderr, "Error allocating memory for reservoir of size %zu\n", p->num_neurons);
         return NULL;
     }
-    
-    reservoir->num_neurons = num_neurons;
-    reservoir->num_inputs = num_inputs;
-    reservoir->num_outputs = num_outputs;
-    reservoir->spectral_radius = spectral_radius;
-    reservoir->ei_ratio = ei_ratio;
-    reservoir->input_strength = input_strength;
-    reservoir->connectivity = connectivity; 
-    reservoir->dt = dt;
-    reservoir->connectivity_type = connectivity_type;
-    reservoir->neuron_type = neuron_type;
-    reservoir->neuron_params = neuron_params;
-    reservoir->synapse_type = synapse_type;
-    reservoir->synapse_backend = synapse_backend;
-    reservoir->synapse_params = synapse_params;
-    
-    
-    reservoir->neurons = malloc(num_neurons * sizeof(void*));
-    
+
+    reservoir->num_neurons = p->num_neurons;
+    reservoir->num_inputs = p->num_inputs;
+    reservoir->num_outputs = p->num_outputs;
+    reservoir->spectral_radius = p->spectral_radius;
+    reservoir->ei_ratio = p->ei_ratio;
+    reservoir->input_strength = p->input_strength;
+    reservoir->connectivity = p->connectivity;
+    reservoir->dt = p->dt;
+    reservoir->connectivity_type = p->connectivity_type;
+    reservoir->neuron_type = p->neuron_type;
+    reservoir->neuron_params = p->neuron_params;
+    reservoir->synapse_type = p->synapse_type;
+    reservoir->synapse_backend = p->synapse_backend;
+    reservoir->synapse_params = p->synapse_params;
+    reservoir->seed = p->seed;
+    spires_rng_seed(&reservoir->rng, p->seed);
+
+
+    reservoir->neurons = malloc(p->num_neurons * sizeof(void*));
+
     if (!(reservoir->neurons)) {
         fprintf(stderr, "Memory allocation failed for reservoir neurons\n");
-        free(reservoir); 
+        free(reservoir);
         return NULL;
     }
 
     void *local_shared_neuron_data = NULL; // set to NULL to start, optionally change it during neuron instantiation
-    
+
     #pragma omp parallel for // parallelizable because race conditions are handled by init_neuron
-    for (size_t i = 0; i < num_neurons; i++) {
-        reservoir->neurons[i] = init_neuron(neuron_type, neuron_params, dt, &local_shared_neuron_data); 
+    for (size_t i = 0; i < p->num_neurons; i++) {
+        reservoir->neurons[i] = init_neuron(p->neuron_type, p->neuron_params, p->dt, &local_shared_neuron_data);
     }
     
     reservoir->shared_neuron_data = local_shared_neuron_data; // malloc'd in function if flif_gl is used, must free
@@ -305,10 +306,10 @@ void free_reservoir(struct reservoir *reservoir)
 }
 
 
-double generate_weight(double ei_ratio) 
+double generate_weight(struct spires_rng *rng, double ei_ratio)
 {
-    double magnitude = (double)rand() / RAND_MAX;
-    if (((double)rand() / RAND_MAX) < ei_ratio) {
+    double magnitude = spires_rng_double(rng);
+    if (spires_rng_double(rng) < ei_ratio) {
         return magnitude;
     }
     else {
@@ -320,16 +321,17 @@ double generate_weight(double ei_ratio)
  * @brief Initializes the weight matrices for a reservoir.
  * * @param reservoir A pointer to the reservoir to initialize.
  * @return EXIT_SUCCESS or EXIT_FAILURE.
- * * @note The user is responsible for seeding the random number generator 
- * before initializing a reservoir. This should be done once at the beginning
- * of the main() application by calling srand(time(NULL)).
+ * * @note Randomness comes from the reservoir's own RNG, seeded from
+ * reservoir_params.seed at construction. Construction is therefore
+ * reproducible and safe to run on several threads at once; the global
+ * srand()/rand() pair is no longer involved.
  */
 
 /* --- helpers for weight init ----- */
 
-static inline double urand01(void)
+static inline double urand01(struct spires_rng *rng)
 {
-    return (double)rand() / (double)RAND_MAX;
+    return spires_rng_double(rng);
 }
 
 static inline int has_edge(const double *W, size_t n, size_t i, size_t j)
@@ -337,9 +339,10 @@ static inline int has_edge(const double *W, size_t n, size_t i, size_t j)
     return W[i * n + j] != 0.0;
 }
 
-static inline void add_edge(double *W_dense, size_t n, double ei_ratio, size_t i, size_t j)
+static inline void add_edge(double *W_dense, size_t n, struct spires_rng *rng,
+                            double ei_ratio, size_t i, size_t j)
 {
-    W_dense[i * n + j] = generate_weight(ei_ratio);
+    W_dense[i * n + j] = generate_weight(rng, ei_ratio);
 }
 
 int init_weights(struct reservoir *reservoir)
@@ -379,7 +382,7 @@ int init_weights(struct reservoir *reservoir)
     {
         size_t nin = reservoir->num_neurons * reservoir->num_inputs;
         for (size_t k = 0; k < nin; k++)
-            reservoir->W_in[k] = generate_weight(reservoir->ei_ratio);
+            reservoir->W_in[k] = generate_weight(&reservoir->rng, reservoir->ei_ratio);
     }
 
     switch (reservoir->connectivity_type) {
@@ -390,8 +393,8 @@ int init_weights(struct reservoir *reservoir)
                 for (size_t j = 0; j < n; j++) {
                     if (i == j)
                         continue;
-                    if (urand01() < reservoir->connectivity)
-                        add_edge(W_dense, n, reservoir->ei_ratio, i, j);
+                    if (urand01(&reservoir->rng) < reservoir->connectivity)
+                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, i, j);
                 }
             }
         } break;
@@ -417,26 +420,26 @@ int init_weights(struct reservoir *reservoir)
                 for (int s = 1; s <= K; s++) {
                     size_t j = (i + (size_t)s) % n;   /* forward neighbor */
                     if (i == j) continue;
-                    add_edge(W_dense, n, reservoir->ei_ratio, i, j);
+                    add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, i, j);
                 }
             }
             /* 2) rewire each (i -> i+s) with prob p to a random j != i, no duplicate edges */
             for (size_t i = 0; i < n; i++) {
                 for (int s = 1; s <= K; s++) {
                     size_t j_old = (i + (size_t)s) % n;
-                    if (urand01() < p) {
+                    if (urand01(&reservoir->rng) < p) {
                         /* drop old edge */
                         W_dense[i * n + j_old] = 0.0;
                         /* choose a new target j_new */
                         size_t j_new;
                         int attempts = 0;
                         do {
-                            j_new = (size_t)(urand01() * (double)n);
+                            j_new = (size_t)(urand01(&reservoir->rng) * (double)n);
                             if (j_new >= n) j_new = n - 1;
                             if (++attempts > 10 * (int)n) break; /* fail-safe */
                         } while (j_new == i || has_edge(W_dense, n, i, j_new));
                         if (j_new != i)
-                            add_edge(W_dense, n, reservoir->ei_ratio, i, j_new);
+                            add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, i, j_new);
                     }
                 }
             }
@@ -490,7 +493,7 @@ int init_weights(struct reservoir *reservoir)
                     if (total <= 0.0) total = (double)v; /* fallback uniform */
 
                     /* roulette-wheel pick */
-                    double r = urand01() * total, acc = 0.0;
+                    double r = urand01(&reservoir->rng) * total, acc = 0.0;
                     size_t pick = 0;
                     for (size_t u = 0; u < v; u++) {
                         acc += (double)deg[u] + A;
@@ -508,7 +511,7 @@ int init_weights(struct reservoir *reservoir)
 
                 /* Fallback to random unique partners if PA got stuck (rare on small N) */
                 while (added < m) {
-                    size_t pick = (size_t)(urand01() * (double)v);
+                    size_t pick = (size_t)(urand01(&reservoir->rng) * (double)v);
                     if (pick >= v) pick = v - 1;
                     if (pick != v && !adj[v * n + pick]) {
                         adj[v * n + pick] = 1;
@@ -523,10 +526,10 @@ int init_weights(struct reservoir *reservoir)
             for (size_t i = 0; i < n; i++) {
                 for (size_t j = i + 1; j < n; j++) {
                     if (!adj[i * n + j]) continue;
-                    if (urand01() < 0.5) {
-                        W_dense[i * n + j] = generate_weight(reservoir->ei_ratio);
+                    if (urand01(&reservoir->rng) < 0.5) {
+                        W_dense[i * n + j] = generate_weight(&reservoir->rng, reservoir->ei_ratio);
                     } else {
-                        W_dense[j * n + i] = generate_weight(reservoir->ei_ratio);
+                        W_dense[j * n + i] = generate_weight(&reservoir->rng, reservoir->ei_ratio);
                     }
                 }
             }
@@ -538,7 +541,7 @@ int init_weights(struct reservoir *reservoir)
 
     reservoir->W = synapse_build_from_dense(W_dense, reservoir->num_neurons,
                                             reservoir->synapse_type, reservoir->synapse_backend,
-                                            reservoir->synapse_params);
+                                            reservoir->synapse_params, &reservoir->rng);
     free(W_dense);
 
     return EXIT_SUCCESS;
@@ -565,7 +568,7 @@ int randomize_output_layer(struct reservoir *reservoir)
 
     double ei_ratio = 0.5; // good overall starting point for rich outputs
     for (size_t i = 0; i < reservoir->num_neurons * reservoir->num_outputs; i++) {
-        reservoir->W_out[i] = generate_weight(ei_ratio);
+        reservoir->W_out[i] = generate_weight(&reservoir->rng, ei_ratio);
     }
     return EXIT_SUCCESS;
 }
@@ -936,19 +939,31 @@ struct reservoir *coarse_grain_reservoir(const struct reservoir *r, double weigh
 
     free(W_work); free(W_in_work); free(W_out_work); free(old_to_new);
 
-    struct reservoir *new_r = create_reservoir(
-        num_super, num_inputs, num_outputs,
-        r->spectral_radius, r->ei_ratio, r->input_strength,
-        r->connectivity, r->dt,
-        r->connectivity_type, r->neuron_type, r->neuron_params,
-        r->synapse_type, r->synapse_backend, r->synapse_params);
+    struct reservoir_params cg_params = {
+        .num_neurons       = num_super,
+        .num_inputs        = num_inputs,
+        .num_outputs       = num_outputs,
+        .spectral_radius   = r->spectral_radius,
+        .ei_ratio          = r->ei_ratio,
+        .input_strength    = r->input_strength,
+        .connectivity      = r->connectivity,
+        .dt                = r->dt,
+        .connectivity_type = r->connectivity_type,
+        .neuron_type       = r->neuron_type,
+        .neuron_params     = r->neuron_params,
+        .synapse_type      = r->synapse_type,
+        .synapse_backend   = r->synapse_backend,
+        .synapse_params    = r->synapse_params,
+        .seed              = r->seed,
+    };
+    struct reservoir *new_r = create_reservoir(&cg_params);
     if (!new_r) {
         fprintf(stderr, "Failed to create coarse-grained reservoir.\n");
         free(W_new); free(W_in_new); free(W_out_new); free(V); free(alive);
         return NULL;
     }
 
-    new_r->W = synapse_build_from_dense(W_new, num_super, r->W.type, r->W.backend, r->synapse_params);
+    new_r->W = synapse_build_from_dense(W_new, num_super, r->W.type, r->W.backend, r->synapse_params, &new_r->rng);
     free(W_new);
     new_r->W_in  = W_in_new;
     new_r->W_out = W_out_new;

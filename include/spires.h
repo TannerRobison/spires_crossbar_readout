@@ -123,7 +123,21 @@ typedef struct {
     spires_synapse_type      synapse_type;    /* default 0 = SPIRES_SYNAPSE_SIMPLE */
     spires_synapse_backend   synapse_backend; /* default 0 = SPIRES_SYNAPSE_SPARSE */
     double *synapse_params;       /* forwarded as-is; layout documented above per synapse_type; caller owns */
+    /* Seed for this reservoir's own RNG. Weights, topology and readout
+     * initialisation all draw from it, so the same seed and config always
+     * produce the same network, and reservoirs may be built concurrently on
+     * separate threads without interfering.
+     *
+     * 0 is an ordinary seed, not a sentinel: a zero-initialised config gives
+     * a reproducible network rather than a different one each run. Pass
+     * spires_random_seed() to opt in to per-run variation. */
+    uint64_t seed;
 } spires_reservoir_config;
+
+/* Nondeterministic seed for spires_reservoir_config.seed. Use only when a
+ * different network per run is actually wanted; anything you may need to
+ * reproduce should carry an explicit seed. */
+uint64_t spires_random_seed(void);
 
 /* ----------------------------
  * Lifecycle

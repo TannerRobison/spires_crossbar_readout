@@ -42,10 +42,14 @@ struct synapse_matrix {
 
 /* synapse_params layout is documented per type in the corresponding header
  * under src/synapses/; SYNAPSE_SIMPLE ignores it. */
+/* rng is used only by synapse types that sample per-connection parameters
+ * (currently PSC_HETEROGENEOUS); others ignore it. May be NULL if no such
+ * type is in use. */
 struct synapse_matrix synapse_build_from_dense(const double *dense, size_t n,
                                                 enum synapse_type type,
                                                 enum synapse_backend backend,
-                                                const double *synapse_params);
+                                                const double *synapse_params,
+                                                struct spires_rng *rng);
 void   synapse_free(struct synapse_matrix *w);
 void   synapse_to_dense(const struct synapse_matrix *w, double *dense_out);
 double synapse_row_dot(const struct synapse_matrix *w, size_t row, const double *x);

@@ -3,7 +3,8 @@
 struct synapse_matrix synapse_build_from_dense(const double *dense, size_t n,
                                                 enum synapse_type type,
                                                 enum synapse_backend backend,
-                                                const double *synapse_params)
+                                                const double *synapse_params,
+                                                struct spires_rng *rng)
 {
     struct synapse_matrix w = {0};
     w.type = type;
@@ -23,8 +24,8 @@ struct synapse_matrix synapse_build_from_dense(const double *dense, size_t n,
         break;
     case SYNAPSE_PSC_HETEROGENEOUS:
         w.data = (backend == SYNAPSE_SPARSE)
-            ? (void *)synapse_psc_heterogeneous_build_sparse(dense, n, synapse_params)
-            : (void *)synapse_psc_heterogeneous_build_dense(dense, n, synapse_params);
+            ? (void *)synapse_psc_heterogeneous_build_sparse(dense, n, synapse_params, rng)
+            : (void *)synapse_psc_heterogeneous_build_dense(dense, n, synapse_params, rng);
         break;
     case SYNAPSE_FRACTIONAL:
         w.data = (backend == SYNAPSE_SPARSE)

@@ -130,6 +130,9 @@ int main(void)
             .connectivity_type = SPIRES_CONN_RANDOM,
             .neuron_type       = SPIRES_NEURON_FLIF_GL,
             .neuron_params     = fractional_neuron_params,   /* alpha will be set internally by optimizer */
+            /* A different network each run. Use a literal seed instead to
+             * make a result reproducible. srand() no longer affects SPIRES. */
+            .seed              = spires_random_seed(),
     };
 
     /* Train final reservoir with the best config and ridge on ALL T samples */
