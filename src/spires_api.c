@@ -39,6 +39,28 @@ spires_status spires_reservoir_create(const spires_reservoir_config *cfg,
         return SPIRES_ERR_INVALID_ARG;
     }
 
+    if (cfg->plasticity_type != SPIRES_PLASTICITY_NONE) {
+        if (!cfg->plasticity_params) {
+            fprintf(stderr, "plasticity_params must be set when plasticity is enabled\n");
+            return SPIRES_ERR_INVALID_ARG;
+        }
+        /* This type keeps its own flat weight array instead of wrapping
+         * simple_synapse_data, so the shared traversal does not reach it.
+         * Refuse rather than silently leaving weights fixed. */
+        if (cfg->synapse_type == SPIRES_SYNAPSE_PSC_HETEROGENEOUS) {
+            fprintf(stderr, "plasticity is not implemented for "
+                            "SPIRES_SYNAPSE_PSC_HETEROGENEOUS\n");
+            return SPIRES_ERR_INVALID_ARG;
+        }
+        /* The rules are selected by presynaptic identity, which only exists
+         * under Dale's law. Inferring it from the weight fails once a weight
+         * reaches zero: the sign is gone and the synapse switches rules. */
+        if (cfg->ei_mode != SPIRES_EI_PER_NEURON) {
+            fprintf(stderr, "plasticity requires ei_mode = SPIRES_EI_PER_NEURON\n");
+            return SPIRES_ERR_INVALID_ARG;
+        }
+    }
+
     enum connectivity_type conn = (enum connectivity_type)cfg->connectivity_type;
     enum neuron_type ntype = (enum neuron_type)cfg->neuron_type;
     enum synapse_type stype = (enum synapse_type)cfg->synapse_type;
@@ -59,6 +81,9 @@ spires_status spires_reservoir_create(const spires_reservoir_config *cfg,
         .synapse_type      = stype,
         .synapse_backend   = sbackend,
         .synapse_params    = cfg->synapse_params,
+        .ei_mode           = (enum ei_mode)cfg->ei_mode,
+        .plasticity_type   = (enum plasticity_type)cfg->plasticity_type,
+        .plasticity_params = cfg->plasticity_params,
         .seed              = cfg->seed,
     };
 

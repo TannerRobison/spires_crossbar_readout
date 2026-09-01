@@ -19,6 +19,7 @@ INCLUDES += -I/usr/include/openblas
 # -------- sources/objects --------
 SRCS := \
   $(SRC_DIR)/rng.c        \
+  $(SRC_DIR)/plasticity.c \
   $(SRC_DIR)/math_utils.c \
   $(SRC_DIR)/sparse.c     \
   $(SRC_DIR)/synapse.c    \

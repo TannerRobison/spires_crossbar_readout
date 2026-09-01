@@ -82,3 +82,12 @@ const double *synapse_psc_homogeneous_prepare(struct psc_homogeneous_synapse_dat
         d->trace[i] = d->trace[i] * decay + (1.0 - decay) * spikes[i];
     return d->trace;
 }
+
+/* Plasticity acts on the weights; the synaptic current model is orthogonal,
+ * so this simply forwards to the shared implementation. */
+void synapse_psc_homogeneous_apply_stdp(struct psc_homogeneous_synapse_data *d, const double *spikes,
+                            struct plasticity_state *ps)
+{
+    if (d)
+        synapse_simple_apply_stdp(d->weights, spikes, ps);
+}

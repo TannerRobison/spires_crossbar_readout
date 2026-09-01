@@ -4,11 +4,18 @@
 #include "neuron.h"
 #include "synapse.h"
 #include "rng.h"
+#include "plasticity.h"
 
 enum connectivity_type {
     RANDOM,
     SMALL_WORLD,
     SCALE_FREE
+};
+
+/* Sign assignment for recurrent weights; see spires_ei_mode. */
+enum ei_mode {
+    EI_PER_SYNAPSE,
+    EI_PER_NEURON
 };
 
 struct reservoir {
@@ -29,8 +36,15 @@ struct reservoir {
     enum neuron_type neuron_type;
     enum synapse_type synapse_type;
     enum synapse_backend synapse_backend;
+    enum ei_mode ei_mode;
     double *neuron_params;
     double *synapse_params;
+    /* Dale's law identities, length num_neurons; NULL under EI_PER_SYNAPSE.
+     * A cache: under Dale's law any non-zero in column j already reveals
+     * neuron j's sign. Plasticity rules must therefore preserve weight sign,
+     * or this silently disagrees with W. */
+    signed char *neuron_sign;
+    struct plasticity_state plasticity;   /* traces owned here */
     uint64_t seed;              // seed this reservoir was built from
     struct spires_rng rng;      // per-reservoir stream; replaces global rand()
 };
@@ -54,6 +68,9 @@ struct reservoir_params {
     enum synapse_type synapse_type;
     enum synapse_backend synapse_backend;
     double *synapse_params;
+    enum ei_mode ei_mode;
+    enum plasticity_type plasticity_type;
+    double *plasticity_params;
     /* Seed for this reservoir's own RNG. 0 is an ordinary seed, not a
      * sentinel: construction is reproducible by default. Callers wanting a
      * different network per run pass spires_random_seed(). */

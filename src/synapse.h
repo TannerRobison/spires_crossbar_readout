@@ -1,6 +1,7 @@
 #ifndef SYNAPSE_H
 #define SYNAPSE_H
 
+#include "plasticity.h"
 #include "synapses/simple.h"
 #include "synapses/psc_homogeneous.h"
 #include "synapses/psc_heterogeneous.h"
@@ -55,6 +56,14 @@ void   synapse_to_dense(const struct synapse_matrix *w, double *dense_out);
 double synapse_row_dot(const struct synapse_matrix *w, size_t row, const double *x);
 void   synapse_scale(struct synapse_matrix *w, double factor);
 double synapse_spectral_radius(const struct synapse_matrix *w);
+
+/* Apply one plasticity step against the current spike vector. Traces are
+ * expected to have been decayed already and are accumulated afterwards, so
+ * this sees only strictly-earlier activity. No-op when type is
+ * PLASTICITY_NONE. */
+void   synapse_apply_plasticity(struct synapse_matrix *w,
+                                const double *spikes,
+                                struct plasticity_state *ps, double dt);
 
 /* Called once per micro-step, before the per-neuron row_dot pass (it mutates
  * shared per-synapse-model state, so must run single-threaded/first).

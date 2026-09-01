@@ -3,6 +3,7 @@
 #include "../math_utils.h"
 #include <string.h>
 #include <cblas.h>
+#include <math.h>
 
 struct simple_synapse_data {
     int is_sparse;
@@ -76,4 +77,92 @@ double synapse_simple_spectral_radius(const struct simple_synapse_data *d)
     if (d->is_sparse)
         return csr_spectral_radius(&d->storage.csr, d->n);
     return calc_spectral_radius(d->storage.dense, d->n);
+}
+
+/* w^mu without calling pow() for the two exponents that actually get used:
+ * mu = 1 is linear (fully multiplicative), mu = 0 is constant (additive). */
+static inline double wdep(double base, double mu)
+{
+    if (base <= 0.0) return 0.0;
+    if (mu == 1.0)   return base;
+    if (mu == 0.0)   return 1.0;
+    return pow(base, mu);
+}
+
+/* Update one weight. j is the source neuron (column), i the target (row);
+ * see test_convention.c for the empirical check of that convention.
+ *
+ * The rule follows the SOURCE neuron's identity, because that is what the
+ * experimental literature separates: excitatory synapses show an asymmetric
+ * window (Gutig et al. 2003), inhibitory ones a symmetric window with
+ * constant depression (Vogels et al. 2011; D'amour & Froemke 2015).
+ *
+ * Identity comes from neuron_sign, never from the sign of w: a weight driven
+ * to zero has no sign left to read. neuron_sign is therefore required here,
+ * which is why plasticity is refused under EI_PER_SYNAPSE.
+ *
+ * Both branches preserve sign. The excitatory branch is weight-dependent, so
+ * depression vanishes as w approaches zero and the weight can never cross it;
+ * the inhibitory branch is additive in magnitude and so needs the explicit
+ * floor. */
+static inline double stdp_one(double w, size_t i, size_t j,
+                              const double *spikes,
+                              const struct plasticity_state *ps,
+                              const double *P)
+{
+    int src_excitatory = ps->neuron_sign[j] > 0;
+    double wmax = P[PL_W_MAX];
+    if (wmax <= 0.0) return w;
+
+    if (src_excitatory) {
+        double lambda = P[PL_LAMBDA];
+        if (spikes[i] != 0.0)                    /* target fired: potentiate */
+            w += lambda * wdep(1.0 - w / wmax, P[PL_MU_PLUS]) * ps->x_pre_e[j];
+        if (spikes[j] != 0.0)                    /* source fired: depress */
+            w -= lambda * P[PL_ALPHA_E] * wdep(w / wmax, P[PL_MU_MINUS]) * ps->x_post_e[i];
+        if (w < 0.0)    w = 0.0;
+        if (w > wmax)   w = wmax;
+        return w;
+    }
+
+    /* Symmetric window on the magnitude: either order potentiates inhibition.
+     * alpha = 2*tau*rho_0 is the constant depression that sets the target
+     * postsynaptic rate, so this branch is homeostatic. */
+    double alpha_i = 2.0 * P[PL_TAU_I] * P[PL_RHO_0];
+    double eta = P[PL_ETA];
+    double mag = -w;
+    if (spikes[i] != 0.0)
+        mag += eta * ps->x_pre_i[j];
+    if (spikes[j] != 0.0)
+        mag += eta * (ps->x_post_i[i] - alpha_i);
+    if (mag < 0.0)   mag = 0.0;
+    if (mag > wmax)  mag = wmax;
+    return -mag;
+}
+
+void synapse_simple_apply_stdp(struct simple_synapse_data *d,
+                               const double *spikes,
+                               struct plasticity_state *ps)
+{
+    if (!d || !ps || !spikes || !ps->params || !ps->neuron_sign)
+        return;
+    const double *P = ps->params;
+    size_t n = d->n;
+
+    if (d->is_sparse) {
+        struct csr_matrix *m = &d->storage.csr;
+        for (size_t i = 0; i < n; i++) {
+            for (size_t k = m->row_ptr[i]; k < m->row_ptr[i + 1]; k++)
+                m->values[k] = stdp_one(m->values[k], i, m->col_idx[k], spikes, ps, P);
+        }
+    } else {
+        double *W = d->storage.dense;
+        for (size_t i = 0; i < n; i++) {
+            for (size_t j = 0; j < n; j++) {
+                double w = W[i * n + j];
+                if (w != 0.0)
+                    W[i * n + j] = stdp_one(w, i, j, spikes, ps, P);
+            }
+        }
+    }
 }

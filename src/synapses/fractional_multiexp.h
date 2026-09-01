@@ -1,6 +1,9 @@
 #ifndef SYNAPSE_FRACTIONAL_MULTIEXP_H
 #define SYNAPSE_FRACTIONAL_MULTIEXP_H
 
+#include "../plasticity.h"
+#include "simple.h"
+
 #include <stdlib.h>
 
 /* SYNAPSE_FRACTIONAL_MULTIEXP: efficient O(N)-per-step approximation of
@@ -36,5 +39,7 @@ double synapse_fractional_multiexp_row_dot(const struct fractional_multiexp_syna
 void   synapse_fractional_multiexp_scale(struct fractional_multiexp_synapse_data *d, double factor);
 double synapse_fractional_multiexp_spectral_radius(const struct fractional_multiexp_synapse_data *d);
 const double *synapse_fractional_multiexp_prepare(struct fractional_multiexp_synapse_data *d, const double *spikes, double dt);
+
+void synapse_fractional_multiexp_apply_stdp(struct fractional_multiexp_synapse_data *d, const double *spikes, struct plasticity_state *ps);
 
 #endif // SYNAPSE_FRACTIONAL_MULTIEXP_H

@@ -42,6 +42,32 @@ struct reservoir *create_reservoir(const struct reservoir_params *p)
     reservoir->synapse_type = p->synapse_type;
     reservoir->synapse_backend = p->synapse_backend;
     reservoir->synapse_params = p->synapse_params;
+    reservoir->ei_mode = p->ei_mode;
+    reservoir->neuron_sign = NULL;
+
+    reservoir->plasticity.type = p->plasticity_type;
+    reservoir->plasticity.params = p->plasticity_params;
+    reservoir->plasticity.x_pre_e = NULL;
+    reservoir->plasticity.x_post_e = NULL;
+    reservoir->plasticity.x_pre_i = NULL;
+    reservoir->plasticity.x_post_i = NULL;
+    reservoir->plasticity.neuron_sign = NULL;
+    if (p->plasticity_type != PLASTICITY_NONE) {
+        reservoir->plasticity.x_pre_e  = calloc(p->num_neurons, sizeof(double));
+        reservoir->plasticity.x_post_e = calloc(p->num_neurons, sizeof(double));
+        reservoir->plasticity.x_pre_i  = calloc(p->num_neurons, sizeof(double));
+        reservoir->plasticity.x_post_i = calloc(p->num_neurons, sizeof(double));
+        if (!reservoir->plasticity.x_pre_e || !reservoir->plasticity.x_post_e ||
+            !reservoir->plasticity.x_pre_i || !reservoir->plasticity.x_post_i) {
+            fprintf(stderr, "Failed to allocate plasticity traces\n");
+            free(reservoir->plasticity.x_pre_e);
+            free(reservoir->plasticity.x_post_e);
+            free(reservoir->plasticity.x_pre_i);
+            free(reservoir->plasticity.x_post_i);
+            free(reservoir);
+            return NULL;
+        }
+    }
     reservoir->seed = p->seed;
     spires_rng_seed(&reservoir->rng, p->seed);
 
@@ -160,6 +186,14 @@ void step_reservoir(struct reservoir *r, const double *input_vector)
             update_neuron(r->neurons[i], r->neuron_type, total_input, r->dt);
             new_spikes[i] = get_neuron_spike(r->neurons[i], r->neuron_type);
         }
+
+        /* Decay, then update weights against strictly-earlier activity, then
+         * fold in this step's spikes. One spike vector serves both roles:
+         * a neuron's spike is presynaptic for its outgoing synapses and
+         * postsynaptic for its incoming ones. */
+        plasticity_decay(&r->plasticity, num_neurons, r->dt);
+        synapse_apply_plasticity(&r->W, new_spikes, &r->plasticity, r->dt);
+        plasticity_accumulate(&r->plasticity, new_spikes, num_neurons);
 
         memcpy(last_spikes, new_spikes, num_neurons * sizeof(double)); 
     }
@@ -286,6 +320,17 @@ void free_reservoir(struct reservoir *reservoir)
         return;
     }
 
+    free(reservoir->neuron_sign);
+    reservoir->neuron_sign = NULL;
+    free(reservoir->plasticity.x_pre_e);
+    free(reservoir->plasticity.x_post_e);
+    free(reservoir->plasticity.x_pre_i);
+    free(reservoir->plasticity.x_post_i);
+    reservoir->plasticity.x_pre_e = NULL;
+    reservoir->plasticity.x_post_e = NULL;
+    reservoir->plasticity.x_pre_i = NULL;
+    reservoir->plasticity.x_post_i = NULL;
+
     for (size_t i = 0; i < reservoir->num_neurons; i++) {
         free_neuron(reservoir->neurons[i], reservoir->neuron_type);
         reservoir->neurons[i] = NULL;
@@ -339,10 +384,17 @@ static inline int has_edge(const double *W, size_t n, size_t i, size_t j)
     return W[i * n + j] != 0.0;
 }
 
+/* neuron_sign is NULL under EI_PER_SYNAPSE, leaving the per-connection sign
+ * from generate_weight() untouched. Under Dale's law it holds one sign per
+ * neuron, and the presynaptic neuron j fixes the sign of the edge. */
 static inline void add_edge(double *W_dense, size_t n, struct spires_rng *rng,
-                            double ei_ratio, size_t i, size_t j)
+                            double ei_ratio, const signed char *neuron_sign,
+                            size_t i, size_t j)
 {
-    W_dense[i * n + j] = generate_weight(rng, ei_ratio);
+    double w = generate_weight(rng, ei_ratio);
+    if (neuron_sign)
+        w = (neuron_sign[j] > 0) ? fabs(w) : -fabs(w);
+    W_dense[i * n + j] = w;
 }
 
 int init_weights(struct reservoir *reservoir)
@@ -385,6 +437,23 @@ int init_weights(struct reservoir *reservoir)
             reservoir->W_in[k] = generate_weight(&reservoir->rng, reservoir->ei_ratio);
     }
 
+    /* Dale's law: one identity per neuron, drawn once, so that every synapse
+     * leaving it shares a sign. NULL under EI_PER_SYNAPSE, which leaves the
+     * per-connection signs from generate_weight() alone and consumes no extra
+     * draws -- so default networks are unchanged. */
+    signed char *neuron_sign = NULL;
+    if (reservoir->ei_mode == EI_PER_NEURON) {
+        neuron_sign = malloc(reservoir->num_neurons * sizeof(*neuron_sign));
+        reservoir->neuron_sign = neuron_sign;
+        if (!neuron_sign) {
+            fprintf(stderr, "Failed to allocate E/I identity table\n");
+            free(W_dense);
+            return EXIT_FAILURE;
+        }
+        for (size_t k = 0; k < reservoir->num_neurons; k++)
+            neuron_sign[k] = (urand01(&reservoir->rng) < reservoir->ei_ratio) ? 1 : -1;
+    }
+
     switch (reservoir->connectivity_type) {
         case RANDOM: {
             /* Bernoulli directed graph with edge prob = connectivity, no self-loops */
@@ -394,7 +463,7 @@ int init_weights(struct reservoir *reservoir)
                     if (i == j)
                         continue;
                     if (urand01(&reservoir->rng) < reservoir->connectivity)
-                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, i, j);
+                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
                 }
             }
         } break;
@@ -420,7 +489,7 @@ int init_weights(struct reservoir *reservoir)
                 for (int s = 1; s <= K; s++) {
                     size_t j = (i + (size_t)s) % n;   /* forward neighbor */
                     if (i == j) continue;
-                    add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, i, j);
+                    add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
                 }
             }
             /* 2) rewire each (i -> i+s) with prob p to a random j != i, no duplicate edges */
@@ -439,7 +508,7 @@ int init_weights(struct reservoir *reservoir)
                             if (++attempts > 10 * (int)n) break; /* fail-safe */
                         } while (j_new == i || has_edge(W_dense, n, i, j_new));
                         if (j_new != i)
-                            add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, i, j_new);
+                            add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j_new);
                     }
                 }
             }
@@ -527,9 +596,9 @@ int init_weights(struct reservoir *reservoir)
                 for (size_t j = i + 1; j < n; j++) {
                     if (!adj[i * n + j]) continue;
                     if (urand01(&reservoir->rng) < 0.5) {
-                        W_dense[i * n + j] = generate_weight(&reservoir->rng, reservoir->ei_ratio);
+                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
                     } else {
-                        W_dense[j * n + i] = generate_weight(&reservoir->rng, reservoir->ei_ratio);
+                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, j, i);
                     }
                 }
             }
@@ -543,6 +612,7 @@ int init_weights(struct reservoir *reservoir)
                                             reservoir->synapse_type, reservoir->synapse_backend,
                                             reservoir->synapse_params, &reservoir->rng);
     free(W_dense);
+    reservoir->plasticity.neuron_sign = reservoir->neuron_sign;
 
     return EXIT_SUCCESS;
 }
@@ -954,6 +1024,13 @@ struct reservoir *coarse_grain_reservoir(const struct reservoir *r, double weigh
         .synapse_type      = r->synapse_type,
         .synapse_backend   = r->synapse_backend,
         .synapse_params    = r->synapse_params,
+        /* Coarse-graining does not preserve Dale's law: neurons are merged on
+         * strong positive weights, and W_ij > 0 fixes j's identity but not
+         * i's, so a merge can combine an excitatory and an inhibitory neuron.
+         * The result is reported honestly as per-synapse rather than carrying
+         * an ei_mode it no longer satisfies. */
+        .ei_mode           = EI_PER_SYNAPSE,
+        .plasticity_type   = PLASTICITY_NONE,
         .seed              = r->seed,
     };
     struct reservoir *new_r = create_reservoir(&cg_params);

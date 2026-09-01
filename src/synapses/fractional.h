@@ -1,6 +1,9 @@
 #ifndef SYNAPSE_FRACTIONAL_H
 #define SYNAPSE_FRACTIONAL_H
 
+#include "../plasticity.h"
+#include "simple.h"
+
 #include <stdlib.h>
 
 /* SYNAPSE_FRACTIONAL: exact GL-discretized fractional relaxation equation for
@@ -32,5 +35,7 @@ double synapse_fractional_row_dot(const struct fractional_synapse_data *d, size_
 void   synapse_fractional_scale(struct fractional_synapse_data *d, double factor);
 double synapse_fractional_spectral_radius(const struct fractional_synapse_data *d);
 const double *synapse_fractional_prepare(struct fractional_synapse_data *d, const double *spikes, double dt);
+
+void synapse_fractional_apply_stdp(struct fractional_synapse_data *d, const double *spikes, struct plasticity_state *ps);
 
 #endif // SYNAPSE_FRACTIONAL_H

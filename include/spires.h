@@ -104,6 +104,31 @@ typedef enum {
     SPIRES_SYNAPSE_DENSE
 } spires_synapse_backend;
 
+/* Sign assignment for recurrent weights. PER_SYNAPSE draws a sign per
+ * connection; PER_NEURON is Dale's law. */
+typedef enum {
+    SPIRES_EI_PER_SYNAPSE = 0,
+    SPIRES_EI_PER_NEURON
+} spires_ei_mode;
+
+/* Runtime weight plasticity. NONE leaves weights fixed after construction.
+ *
+ * plasticity_params layout for SPIRES_PLASTICITY_STDP:
+ *   excitatory presynaptic neurons (asymmetric, weight-dependent):
+ *     [0] tau_plus  [1] tau_minus  [2] lambda  [3] alpha
+ *     [4] mu_plus   [5] mu_minus
+ *   inhibitory presynaptic neurons (symmetric window):
+ *     [6] tau       [7] eta        [8] rho_0
+ *   shared:
+ *     [9] w_max
+ *
+ * Which rule a synapse gets follows the presynaptic neuron's identity, so
+ * plasticity requires ei_mode = SPIRES_EI_PER_NEURON. */
+typedef enum {
+    SPIRES_PLASTICITY_NONE = 0,
+    SPIRES_PLASTICITY_STDP
+} spires_plasticity_type;
+
 /* ----------------------------
  * Creation-time configuration
  * (kept minimal; forwards to create_reservoir(...) as-is)
@@ -122,6 +147,9 @@ typedef struct {
     double *neuron_params;        /* forwarded to init_neuron; caller owns */
     spires_synapse_type      synapse_type;    /* default 0 = SPIRES_SYNAPSE_SIMPLE */
     spires_synapse_backend   synapse_backend; /* default 0 = SPIRES_SYNAPSE_SPARSE */
+    spires_ei_mode           ei_mode;         /* default 0 = SPIRES_EI_PER_SYNAPSE */
+    spires_plasticity_type   plasticity_type; /* default 0 = SPIRES_PLASTICITY_NONE */
+    double *plasticity_params;    /* layout documented above; caller owns */
     double *synapse_params;       /* forwarded as-is; layout documented above per synapse_type; caller owns */
     /* Seed for this reservoir's own RNG. Weights, topology and readout
      * initialisation all draw from it, so the same seed and config always

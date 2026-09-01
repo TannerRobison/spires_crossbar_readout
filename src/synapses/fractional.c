@@ -140,3 +140,12 @@ const double *synapse_fractional_prepare(struct fractional_synapse_data *d, cons
     d->internal_step++;
     return d->I;
 }
+
+/* Plasticity acts on the weights; the synaptic current model is orthogonal,
+ * so this simply forwards to the shared implementation. */
+void synapse_fractional_apply_stdp(struct fractional_synapse_data *d, const double *spikes,
+                            struct plasticity_state *ps)
+{
+    if (d)
+        synapse_simple_apply_stdp(d->weights, spikes, ps);
+}

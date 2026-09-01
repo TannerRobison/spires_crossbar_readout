@@ -159,3 +159,34 @@ const double *synapse_prepare(struct synapse_matrix *w, const double *spikes, do
     }
     return spikes;
 }
+
+void synapse_apply_plasticity(struct synapse_matrix *w,
+                              const double *spikes,
+                              struct plasticity_state *ps, double dt)
+{
+    if (!w || !ps || ps->type == PLASTICITY_NONE)
+        return;
+    (void)dt;
+
+    switch (w->type) {
+    case SYNAPSE_SIMPLE:
+        synapse_simple_apply_stdp((struct simple_synapse_data *)w->data, spikes, ps);
+        break;
+    case SYNAPSE_PSC_HOMOGENEOUS:
+        synapse_psc_homogeneous_apply_stdp(
+            (struct psc_homogeneous_synapse_data *)w->data, spikes, ps);
+        break;
+    case SYNAPSE_FRACTIONAL:
+        synapse_fractional_apply_stdp(
+            (struct fractional_synapse_data *)w->data, spikes, ps);
+        break;
+    case SYNAPSE_FRACTIONAL_MULTIEXP:
+        synapse_fractional_multiexp_apply_stdp(
+            (struct fractional_multiexp_synapse_data *)w->data, spikes, ps);
+        break;
+    case SYNAPSE_PSC_HETEROGENEOUS:
+        /* Unreachable: rejected at reservoir creation, since this type keeps
+         * its own flat weight array and the shared traversal cannot reach it. */
+        break;
+    }
+}

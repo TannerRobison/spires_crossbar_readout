@@ -2,6 +2,7 @@
 #define SYNAPSE_SIMPLE_H
 
 #include <stdlib.h>
+#include "../plasticity.h"
 
 /* SYNAPSE_SIMPLE: instantaneous scalar-weight multiply (recurrent_input =
  * sum_j w_ij * spike_j). No params used.
@@ -19,5 +20,11 @@ void   synapse_simple_to_dense(const struct simple_synapse_data *d, double *dens
 double synapse_simple_row_dot(const struct simple_synapse_data *d, size_t row, const double *x);
 void   synapse_simple_scale(struct simple_synapse_data *d, double factor);
 double synapse_simple_spectral_radius(const struct simple_synapse_data *d);
+
+/* One STDP step over every stored weight. Traces must already be decayed and
+ * not yet accumulated, so this sees only strictly-earlier spikes. */
+void   synapse_simple_apply_stdp(struct simple_synapse_data *d,
+                                 const double *spikes,
+                                 struct plasticity_state *ps);
 
 #endif // SYNAPSE_SIMPLE_H

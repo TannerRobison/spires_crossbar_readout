@@ -1,6 +1,9 @@
 #ifndef SYNAPSE_PSC_HOMOGENEOUS_H
 #define SYNAPSE_PSC_HOMOGENEOUS_H
 
+#include "../plasticity.h"
+#include "simple.h"
+
 #include <stdlib.h>
 
 /* PSC_HOMOGENEOUS: exponential postsynaptic-current filter with one tau_syn
@@ -21,5 +24,7 @@ double synapse_psc_homogeneous_row_dot(const struct psc_homogeneous_synapse_data
 void   synapse_psc_homogeneous_scale(struct psc_homogeneous_synapse_data *d, double factor);
 double synapse_psc_homogeneous_spectral_radius(const struct psc_homogeneous_synapse_data *d);
 const double *synapse_psc_homogeneous_prepare(struct psc_homogeneous_synapse_data *d, const double *spikes, double dt);
+
+void synapse_psc_homogeneous_apply_stdp(struct psc_homogeneous_synapse_data *d, const double *spikes, struct plasticity_state *ps);
 
 #endif // SYNAPSE_PSC_HOMOGENEOUS_H

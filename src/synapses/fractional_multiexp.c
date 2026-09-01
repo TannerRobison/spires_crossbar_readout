@@ -155,3 +155,12 @@ const double *synapse_fractional_multiexp_prepare(struct fractional_multiexp_syn
 
     return d->combined;
 }
+
+/* Plasticity acts on the weights; the synaptic current model is orthogonal,
+ * so this simply forwards to the shared implementation. */
+void synapse_fractional_multiexp_apply_stdp(struct fractional_multiexp_synapse_data *d, const double *spikes,
+                            struct plasticity_state *ps)
+{
+    if (d)
+        synapse_simple_apply_stdp(d->weights, spikes, ps);
+}
