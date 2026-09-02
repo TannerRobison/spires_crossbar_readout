@@ -83,6 +83,7 @@ int compute_output(struct reservoir *reservoir, double *output_vector);
 double compute_activity(struct reservoir *reservoir);
 void step_reservoir(struct reservoir *reservoir, const double *input_vector);
 double *run_reservoir(struct reservoir *reservoir, double *input_series, size_t input_length); // input_series is a flattened array of input_vector * num_inputs
+int run_reservoir_into(struct reservoir *reservoir, double *input_series, size_t input_length, double *output_series); // output_series holds num_outputs * input_length doubles, caller-allocated
 void free_reservoir(struct reservoir *reservoir);
 int init_weights(struct reservoir *reservoir);
 int randomize_output_layer(struct reservoir *reservoir);

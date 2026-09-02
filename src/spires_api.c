@@ -144,6 +144,16 @@ double *spires_run(spires_reservoir *r, const double *input_series, size_t serie
 }
 
 
+spires_status spires_run_into(spires_reservoir *r, const double *input_series,
+                              size_t series_length, double *output_buffer)
+{
+    if (!r || !r->impl || !input_series || !output_buffer)
+        return SPIRES_ERR_INVALID_ARG;
+    if (run_reservoir_into(r->impl, (double *)input_series, series_length,
+                           output_buffer) != EXIT_SUCCESS)
+        return SPIRES_ERR_INTERNAL;
+    return SPIRES_OK;
+}
 
 /* Nondeterministic seed. Mixes wall-clock time with a stack address so that
  * two processes starting in the same clock tick still differ. Deliberately

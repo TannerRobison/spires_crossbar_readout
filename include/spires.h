@@ -190,12 +190,20 @@ spires_status spires_step(spires_reservoir *r, const double *u_t);
  * ---------------------------- */
 /* Run the reservoir on a series of inputs.
  * input_series: flattened [series_length x num_inputs] (for Din=1 just length=series_length)
- * Returns a newly malloc'd array of length series_length with the readout outputs.
+ * Returns a newly malloc'd array of series_length * num_outputs doubles.
  * Caller must free().
  */
 
 double *spires_run(spires_reservoir *r, const double *input_series, size_t series_length);
 
+/* Run the reservoir on a series of inputs.
+ * input_series: flattened [series_length x num_inputs] (for Din=1 just length=series_length)
+ * output_buffer must hold series_length * num_outputs doubles; the size cannot
+ * be checked here, so a buffer sized for one output per step overflows when
+ * num_outputs > 1.
+ */
+
+spires_status spires_run_into(spires_reservoir *r, const double *input_series, size_t series_length, double *output_buffer);
 
 /* ----------------------------
  * Training

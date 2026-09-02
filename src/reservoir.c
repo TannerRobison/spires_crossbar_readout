@@ -104,27 +104,26 @@ int init_reservoir(struct reservoir *r)
     return EXIT_SUCCESS;
 }
 
-double *run_reservoir(struct reservoir *r, double *input_series, size_t input_length) 
+/* Writes num_outputs * input_length doubles into output_series, supplied by
+ * the caller. run_reservoir() is this plus the allocation. */
+int run_reservoir_into(struct reservoir *r, double *input_series,
+                       size_t input_length, double *output_series)
 {
     if (!r) {
         fprintf(stderr, "Error running reservoir. Reservoir not initialized!\n");
-        return NULL;
+        return EXIT_FAILURE;
     }
 
     if (r->dt <= 0.0) {
         fprintf(stderr, "Error running reservoir. dt must be greater than 0.\n");
-        return NULL;
+        return EXIT_FAILURE;
     }
 
+    if (!input_series || !output_series)
+        return EXIT_FAILURE;
 
     size_t num_inputs = r->num_inputs;
     size_t num_outputs = r->num_outputs;
-
-    double *output_series = malloc(num_outputs * input_length * sizeof(double));
-    if (output_series == NULL) {
-        fprintf(stderr, "Error intializing memory for reservoir outputs!\n");
-        return NULL;
-    }
 
     for (size_t i = 0; i < input_length; i ++) {
         const double *current_input = &input_series[i * num_inputs];
@@ -132,6 +131,27 @@ double *run_reservoir(struct reservoir *r, double *input_series, size_t input_le
 
         double *current_output = &output_series[i * num_outputs];
         compute_output(r, current_output);
+    }
+
+    return EXIT_SUCCESS;
+}
+
+double *run_reservoir(struct reservoir *r, double *input_series, size_t input_length) 
+{
+    if (!r) {
+        fprintf(stderr, "Error running reservoir. Reservoir not initialized!\n");
+        return NULL;
+    }
+
+    double *output_series = malloc(r->num_outputs * input_length * sizeof(double));
+    if (output_series == NULL) {
+        fprintf(stderr, "Error intializing memory for reservoir outputs!\n");
+        return NULL;
+    }
+
+    if (run_reservoir_into(r, input_series, input_length, output_series) != EXIT_SUCCESS) {
+        free(output_series);
+        return NULL;
     }
 
     return output_series;    
