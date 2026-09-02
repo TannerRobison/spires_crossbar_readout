@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include "../plasticity.h"
+#include "../sparse.h"
 
 /* SYNAPSE_SIMPLE: instantaneous scalar-weight multiply (recurrent_input =
  * sum_j w_ij * spike_j). No params used.
@@ -14,6 +15,8 @@
 struct simple_synapse_data;
 
 struct simple_synapse_data *synapse_simple_build_sparse(const double *dense, size_t n);
+/* Same result as build_sparse, without ever materialising the dense matrix. */
+struct simple_synapse_data *synapse_simple_build_sparse_rows(const struct edge_rows *er);
 struct simple_synapse_data *synapse_simple_build_dense(const double *dense, size_t n);
 void   synapse_simple_free(struct simple_synapse_data *d);
 void   synapse_simple_to_dense(const struct simple_synapse_data *d, double *dense_out);

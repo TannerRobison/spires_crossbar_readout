@@ -1,4 +1,33 @@
 #include "synapse.h"
+#include <stdlib.h>
+
+struct synapse_matrix synapse_build_from_rows(const struct edge_rows *er, size_t n,
+                                               enum synapse_type type,
+                                               enum synapse_backend backend,
+                                               const double *synapse_params,
+                                               struct spires_rng *rng)
+{
+    if (type == SYNAPSE_SIMPLE && backend == SYNAPSE_SPARSE) {
+        struct synapse_matrix w = {0};
+        w.type = type;
+        w.backend = backend;
+        w.n = n;
+        w.data = (void *)synapse_simple_build_sparse_rows(er);
+        return w;
+    }
+
+    double *dense = calloc(n * n, sizeof(double));
+    if (!dense) {
+        struct synapse_matrix empty = {0};
+        return empty;
+    }
+    edge_rows_to_dense(er, dense);
+    struct synapse_matrix w =
+        synapse_build_from_dense(dense, n, type, backend, synapse_params, rng);
+    free(dense);
+    return w;
+}
+
 
 struct synapse_matrix synapse_build_from_dense(const double *dense, size_t n,
                                                 enum synapse_type type,

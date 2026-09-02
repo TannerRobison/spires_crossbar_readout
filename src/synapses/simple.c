@@ -14,6 +14,17 @@ struct simple_synapse_data {
     } storage;
 };
 
+struct simple_synapse_data *synapse_simple_build_sparse_rows(const struct edge_rows *er)
+{
+    struct simple_synapse_data *d = malloc(sizeof(*d));
+    if (!d)
+        return NULL;
+    d->is_sparse = 1;
+    d->n = er->n;
+    d->storage.csr = csr_build_from_rows(er);
+    return d;
+}
+
 struct simple_synapse_data *synapse_simple_build_sparse(const double *dense, size_t n)
 {
     struct simple_synapse_data *d = malloc(sizeof(*d));

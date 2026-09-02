@@ -2,6 +2,7 @@
 #define SYNAPSE_H
 
 #include "plasticity.h"
+#include "sparse.h"
 #include "synapses/simple.h"
 #include "synapses/psc_homogeneous.h"
 #include "synapses/psc_heterogeneous.h"
@@ -46,6 +47,19 @@ struct synapse_matrix {
 /* rng is used only by synapse types that sample per-connection parameters
  * (currently PSC_HETEROGENEOUS); others ignore it. May be NULL if no such
  * type is in use. */
+/* Build straight from the construction-time edge accumulator, so a large
+ * reservoir never has to materialise a dense n*n scratch matrix.
+ *
+ * Only SYNAPSE_SIMPLE on the sparse backend has a direct path today; every
+ * other combination expands the edges into a dense buffer and defers to
+ * synapse_build_from_dense, which is exactly what construction did before.
+ * The dense backend inherently stores n*n, so there is nothing to save there. */
+struct synapse_matrix synapse_build_from_rows(const struct edge_rows *er, size_t n,
+                                               enum synapse_type type,
+                                               enum synapse_backend backend,
+                                               const double *synapse_params,
+                                               struct spires_rng *rng);
+
 struct synapse_matrix synapse_build_from_dense(const double *dense, size_t n,
                                                 enum synapse_type type,
                                                 enum synapse_backend backend,

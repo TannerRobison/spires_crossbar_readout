@@ -65,12 +65,12 @@ int main(void)
     }
 
     /* ---- Generate Mackey–Glass ---- */
-    size_t timesteps = 200;
-    double x0 = 0.2;
-    double tau = 22;       // Must be > 17 for chaos
-    double beta = 0.4;
-    double gamma = 0.2;
-    int n = 11;
+    size_t timesteps = 1000;
+    double x0 = 1.2;
+    double tau = 17;       // Must be > 17 for chaos
+    double beta = 0.2;
+    double gamma = 0.1;
+    int n = 10;
 
     double *input_series = malloc(timesteps * sizeof(double));
     if (input_series == NULL) {
@@ -82,10 +82,9 @@ int main(void)
     generate_mackey_glass(input_series, timesteps, x0, tau, beta, gamma, n);
 
 
-    int rc;
     const size_t Din  = 1;  /* Mackey–Glass is scalar input */
     const size_t Dout = 1;  /* predict next value */
-    const size_t horizon = 2;
+    const size_t horizon = 6;
 
     const size_t series_length  = timesteps - horizon;
     
@@ -113,7 +112,7 @@ int main(void)
         20.0,           // tau_m
         1.0,            // alpha
         (double)timesteps, // Tmem
-        0.1,            // bias
+        0.2,            // bias
         0.0             // t_ref
     };
     
@@ -122,12 +121,12 @@ int main(void)
             .num_neurons       = 400,
             .num_inputs        = Din,
             .num_outputs       = Dout,
-            .spectral_radius   = 0.99,
+            .spectral_radius   = 1.5,
             .ei_ratio          = 0.50,
             .input_strength    = 1.00,
-            .connectivity      = 0.2,
-            .dt                = 0.1,
-            .connectivity_type = SPIRES_CONN_RANDOM,
+            .connectivity      = 30/(400-1),
+            .dt                = 1.0,
+            .connectivity_type = SPIRES_CONN_SMALL_WORLD,
             .neuron_type       = SPIRES_NEURON_FLIF_GL,
             .neuron_params     = fractional_neuron_params,   /* alpha will be set internally by optimizer */
             /* A different network each run. Use a literal seed instead to
@@ -143,7 +142,7 @@ int main(void)
             return 1;
     }
 
-    const double lambda = pow(10.0, 0.1);
+    const double lambda = 0.0; //pow(10.0, -10.0);
     if (spires_train_ridge(R, input_series, target_series, T, lambda) != SPIRES_OK) {
             fprintf(stderr, "ridge training failed\n");
             spires_reservoir_destroy(R);

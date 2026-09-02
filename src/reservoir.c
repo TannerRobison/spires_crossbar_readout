@@ -379,22 +379,38 @@ static inline double urand01(struct spires_rng *rng)
     return spires_rng_double(rng);
 }
 
-static inline int has_edge(const double *W, size_t n, size_t i, size_t j)
+static inline int has_edge(const struct edge_rows *er, size_t n, size_t i, size_t j)
 {
-    return W[i * n + j] != 0.0;
+    (void)n;
+    return edge_rows_has(er, i, j);
 }
 
 /* neuron_sign is NULL under EI_PER_SYNAPSE, leaving the per-connection sign
  * from generate_weight() untouched. Under Dale's law it holds one sign per
  * neuron, and the presynaptic neuron j fixes the sign of the edge. */
-static inline void add_edge(double *W_dense, size_t n, struct spires_rng *rng,
+static inline void add_edge(struct edge_rows *er, size_t n, struct spires_rng *rng,
                             double ei_ratio, const signed char *neuron_sign,
                             size_t i, size_t j)
 {
+    (void)n;
     double w = generate_weight(rng, ei_ratio);
     if (neuron_sign)
         w = (neuron_sign[j] > 0) ? fabs(w) : -fabs(w);
-    W_dense[i * n + j] = w;
+    edge_rows_append(er, i, j, w);
+}
+
+/* Rewiring can pick a column whose entry was zeroed earlier in the same pass.
+ * has_edge() reports that as absent, so appending would leave two entries for
+ * one column; overwrite instead. */
+static inline void add_edge_over(struct edge_rows *er, size_t n, struct spires_rng *rng,
+                                 double ei_ratio, const signed char *neuron_sign,
+                                 size_t i, size_t j)
+{
+    (void)n;
+    double w = generate_weight(rng, ei_ratio);
+    if (neuron_sign)
+        w = (neuron_sign[j] > 0) ? fabs(w) : -fabs(w);
+    edge_rows_set(er, i, j, w);
 }
 
 int init_weights(struct reservoir *reservoir)
@@ -416,11 +432,14 @@ int init_weights(struct reservoir *reservoir)
         return EXIT_FAILURE;
     }
 
-    /* zero init recurrent weights scratch buffer; unassigned stay 0.0.
-     * Topology generation below fills this dense buffer exactly as before;
-     * it is converted to sparse CSR storage at the end of this function. */
-    double *W_dense = calloc(reservoir->num_neurons * reservoir->num_neurons, sizeof(double));
-    if (!W_dense) {
+    /* Recurrent weights are accumulated as edges rather than into a dense
+     * n*n scratch buffer, which is what used to dominate construction memory.
+     * Rows are pre-sized to the expected out-degree so generation rarely has
+     * to grow one; unassigned pairs simply never appear. */
+    size_t hint = (size_t)(reservoir->connectivity * (double)reservoir->num_neurons * 1.15) + 8;
+    if (hint > reservoir->num_neurons) hint = reservoir->num_neurons;
+    struct edge_rows W_edges;
+    if (edge_rows_init(&W_edges, reservoir->num_neurons, hint) != 0) {
         fprintf(stderr, "Error allocating scratch memory for W, size of reservoir: %zu\n",
                 reservoir->num_neurons);
         free(reservoir->W_in);
@@ -447,7 +466,7 @@ int init_weights(struct reservoir *reservoir)
         reservoir->neuron_sign = neuron_sign;
         if (!neuron_sign) {
             fprintf(stderr, "Failed to allocate E/I identity table\n");
-            free(W_dense);
+            edge_rows_free(&W_edges);
             return EXIT_FAILURE;
         }
         for (size_t k = 0; k < reservoir->num_neurons; k++)
@@ -463,7 +482,7 @@ int init_weights(struct reservoir *reservoir)
                     if (i == j)
                         continue;
                     if (urand01(&reservoir->rng) < reservoir->connectivity)
-                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
+                        add_edge(&W_edges, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
                 }
             }
         } break;
@@ -489,7 +508,7 @@ int init_weights(struct reservoir *reservoir)
                 for (int s = 1; s <= K; s++) {
                     size_t j = (i + (size_t)s) % n;   /* forward neighbor */
                     if (i == j) continue;
-                    add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
+                    add_edge(&W_edges, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
                 }
             }
             /* 2) rewire each (i -> i+s) with prob p to a random j != i, no duplicate edges */
@@ -498,7 +517,7 @@ int init_weights(struct reservoir *reservoir)
                     size_t j_old = (i + (size_t)s) % n;
                     if (urand01(&reservoir->rng) < p) {
                         /* drop old edge */
-                        W_dense[i * n + j_old] = 0.0;
+                        edge_rows_set(&W_edges, i, j_old, 0.0);
                         /* choose a new target j_new */
                         size_t j_new;
                         int attempts = 0;
@@ -506,9 +525,9 @@ int init_weights(struct reservoir *reservoir)
                             j_new = (size_t)(urand01(&reservoir->rng) * (double)n);
                             if (j_new >= n) j_new = n - 1;
                             if (++attempts > 10 * (int)n) break; /* fail-safe */
-                        } while (j_new == i || has_edge(W_dense, n, i, j_new));
+                        } while (j_new == i || has_edge(&W_edges, n, i, j_new));
                         if (j_new != i)
-                            add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j_new);
+                            add_edge_over(&W_edges, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j_new);
                     }
                 }
             }
@@ -596,9 +615,9 @@ int init_weights(struct reservoir *reservoir)
                 for (size_t j = i + 1; j < n; j++) {
                     if (!adj[i * n + j]) continue;
                     if (urand01(&reservoir->rng) < 0.5) {
-                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
+                        add_edge(&W_edges, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, i, j);
                     } else {
-                        add_edge(W_dense, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, j, i);
+                        add_edge(&W_edges, n, &reservoir->rng, reservoir->ei_ratio, neuron_sign, j, i);
                     }
                 }
             }
@@ -608,10 +627,10 @@ int init_weights(struct reservoir *reservoir)
         } break;
     }
 
-    reservoir->W = synapse_build_from_dense(W_dense, reservoir->num_neurons,
-                                            reservoir->synapse_type, reservoir->synapse_backend,
-                                            reservoir->synapse_params, &reservoir->rng);
-    free(W_dense);
+    reservoir->W = synapse_build_from_rows(&W_edges, reservoir->num_neurons,
+                                           reservoir->synapse_type, reservoir->synapse_backend,
+                                           reservoir->synapse_params, &reservoir->rng);
+    edge_rows_free(&W_edges);
     reservoir->plasticity.neuron_sign = reservoir->neuron_sign;
 
     return EXIT_SUCCESS;
