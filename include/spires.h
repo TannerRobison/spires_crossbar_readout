@@ -205,6 +205,34 @@ double *spires_run(spires_reservoir *r, const double *input_series, size_t serie
 
 spires_status spires_run_into(spires_reservoir *r, const double *input_series, size_t series_length, double *output_buffer);
 
+#ifdef SPIRES_ENABLE_CROSSBAR_READOUT
+typedef struct {
+    size_t num_neurons;
+    size_t num_outputs;
+    size_t num_timesteps;
+    double time_step;
+    double spike_amplitude;
+    double load_resistance;
+    double r_on;
+    double r_off;
+    const char *model_path;
+    const char *subcircuit_name;
+    const char *netlist_path;
+} online_crossbar_config;
+
+/* Run a trained reservoir with an online ngspice crossbar readout.
+ * buffer must hold series_length * config->num_outputs values. */
+spires_status spires_run_crossbar_readout(
+    const online_crossbar_config *config, spires_reservoir *reservoir,
+    const double *input_series, size_t series_length, double *buffer);
+
+/* Returns a malloc'd output buffer, or NULL on failure.
+ * The caller must free the returned buffer. */
+double *spires_run_crossbar_readout_into(
+    const online_crossbar_config *config, spires_reservoir *reservoir,
+    const double *input_series, size_t series_length);
+#endif
+
 /* ----------------------------
  * Training
  * ---------------------------- */
