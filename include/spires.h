@@ -211,7 +211,7 @@ typedef struct {
     size_t num_outputs;
     size_t num_timesteps;
     double time_step;
-    double spike_amplitude;
+    double row_voltage_scaler;
     double load_resistance;
     double r_on;
     double r_off;

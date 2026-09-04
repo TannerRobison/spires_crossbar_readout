@@ -236,7 +236,7 @@ int decode_crossbar_output(size_t num_neurons, size_t num_outputs,
 			   size_t num_timesteps, const double *voltages,
 			   const double *resistances, double load_resistance,
 			   const conductance_mapping *mapping,
-			   double spike_amplitude, double *decoded_outputs)
+			   double row_voltage_scaler, double *decoded_outputs)
 {
 	if (num_neurons == 0 || num_outputs == 0 || num_timesteps == 0 ||
 	    !voltages || !resistances || !mapping || !decoded_outputs) {
@@ -244,7 +244,7 @@ int decode_crossbar_output(size_t num_neurons, size_t num_outputs,
 	}
 
 	if (load_resistance <= 0.0 || mapping->alpha == 0.0 ||
-	    spike_amplitude == 0.0) {
+	    row_voltage_scaler == 0.0) {
 		return -1;
 	}
 
@@ -324,7 +324,7 @@ int decode_crossbar_output(size_t num_neurons, size_t num_outputs,
 			decoded_outputs[output_index] =
 			    (positive_source_current -
 			     negative_source_current) /
-			    (mapping->alpha * spike_amplitude);
+				    (mapping->alpha * row_voltage_scaler);
 		}
 	}
 

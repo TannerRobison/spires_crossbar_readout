@@ -21,7 +21,7 @@ int decode_crossbar_output(size_t num_neurons, size_t num_outputs,
 			   size_t num_timesteps, const double *voltages,
 			   const double *resistances, double load_resistance,
 			   const conductance_mapping *mapping,
-			   double spike_amplitude, double *decoded_outputs);
+			   double row_voltage_scaler, double *decoded_outputs);
 
 int generate_crossbar_netlist(const online_crossbar_config *config,
 			      const double *resistances);

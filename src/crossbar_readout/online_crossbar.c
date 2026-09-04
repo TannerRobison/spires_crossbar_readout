@@ -43,18 +43,22 @@ struct Online_Crossbar {
 static int online_crossbar_init(const online_crossbar_config *config,
 				const spires_reservoir *reservoir,
 				Online_Crossbar **crossbar_out);
+
 static int online_crossbar_start(Online_Crossbar *crossbar);
+
 static int online_crossbar_submit(Online_Crossbar *crossbar, size_t timestep,
 				  const double *state, double *previous_output,
 				  int *output_ready);
+
 static int online_crossbar_finish(Online_Crossbar *crossbar,
 				  double *final_output);
+
 static void online_crossbar_destroy(Online_Crossbar *crossbar);
 
-spires_status run_crossbar_readout(const online_crossbar_config *config,
-				   spires_reservoir *reservoir,
-				   const double *input_series,
-				   size_t series_length, double *buffer)
+spires_status run_crossbar_readout_into(const online_crossbar_config *config,
+					spires_reservoir *reservoir,
+					const double *input_series,
+					size_t series_length, double *buffer)
 {
 	// validating configs
 	if (!config || !reservoir || !input_series || series_length == 0 ||
@@ -144,10 +148,9 @@ spires_status run_crossbar_readout(const online_crossbar_config *config,
 	return status == 0 ? SPIRES_OK : SPIRES_ERR_INTERNAL;
 }
 
-double *run_crossbar_readout_into(const online_crossbar_config *config,
-				  spires_reservoir *reservoir,
-				  const double *input_series,
-				  size_t series_length)
+double *run_crossbar_readout(const online_crossbar_config *config,
+			     spires_reservoir *reservoir,
+			     const double *input_series, size_t series_length)
 {
 	if (!config || series_length == 0 || config->num_outputs == 0 ||
 	    series_length > SIZE_MAX / config->num_outputs ||
@@ -314,7 +317,7 @@ static int callback_voltage(double *voltage, double time, char *name, int ident,
 	}
 
 	*voltage =
-	    crossbar->config.spike_amplitude *
+	    crossbar->config.row_voltage_scaler *
 	    crossbar->state_ring[(timestep % 2) * crossbar->config.num_neurons +
 				 row];
 
@@ -395,7 +398,7 @@ static int callback_data(pvecvaluesall values, int count, int ident,
 					columns, crossbar->resistances,
 					crossbar->config.load_resistance,
 					&crossbar->mapping,
-					crossbar->config.spike_amplitude,
+					crossbar->config.row_voltage_scaler,
 					decoded) == 0) {
 					pthread_mutex_lock(&crossbar->mutex);
 
@@ -430,8 +433,8 @@ static int config_is_valid(const online_crossbar_config *config)
 {
 	if (!config || config->num_neurons == 0 || config->num_outputs == 0 ||
 	    config->num_timesteps == 0 || !isfinite(config->time_step) ||
-	    config->time_step <= 0.0 || !isfinite(config->spike_amplitude) ||
-	    config->spike_amplitude == 0.0 ||
+	    config->time_step <= 0.0 || !isfinite(config->row_voltage_scaler) ||
+	    config->row_voltage_scaler == 0.0 ||
 	    !isfinite(config->load_resistance) ||
 	    config->load_resistance <= 0.0 || !isfinite(config->r_on) ||
 	    !isfinite(config->r_off) || config->r_on <= 0.0 ||

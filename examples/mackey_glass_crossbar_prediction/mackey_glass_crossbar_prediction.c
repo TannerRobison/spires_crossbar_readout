@@ -157,7 +157,7 @@ int main(void)
         .num_outputs = base.num_outputs,
         .num_timesteps = series_length,
         .time_step = 1.0e-6,
-        .spike_amplitude = 0.1,
+        .row_voltage_scaler = 0.1,
         .load_resistance = 50.0,
         .r_on = 1000.0,
         .r_off = 100000.0,
