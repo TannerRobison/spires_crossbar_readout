@@ -1,4 +1,5 @@
 #include "crossbar_circuit.h"
+#include "crossbar_models.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -130,21 +131,21 @@ int convert_weights_to_resistances(const spires_reservoir *reservoir,
 
 /********** Crossbar Generator **********/
 static int write_netlist_header(FILE *file,
-				const online_crossbar_config *config)
+				const spires_crossbar_readout_config *config)
 {
 	return fprintf(file,
 		       "* SPIRES online crossbar\n"
 		       "* Rows: %zu\n"
 		       "* Columns: %zu\n"
-		       "\n.include \"%s\"\n",
+		       "\n%s\n",
 		       config->num_neurons, config->num_outputs * 2,
-		       config->model_path) < 0
+		       crossbar_model_get(config->model)->netlist) < 0
 		   ? -1
 		   : 0;
 }
 
 static int write_external_inputs(FILE *file,
-				 const online_crossbar_config *config)
+				 const spires_crossbar_readout_config *config)
 {
 	if (fprintf(file, "\n* SPIRES reservoir states\n") < 0)
 		return -1;
@@ -159,7 +160,7 @@ static int write_external_inputs(FILE *file,
 }
 
 static int write_memristor_array(FILE *file,
-				 const online_crossbar_config *config,
+				 const spires_crossbar_readout_config *config,
 				 const double *resistances)
 {
 	size_t columns = config->num_outputs * 2;
@@ -173,7 +174,7 @@ static int write_memristor_array(FILE *file,
 				    "X%zu_%zu row%zu col%zu %s"
 				    " PARAMS: Rinit=%.12g\n",
 				    row, column, row, column,
-				    config->subcircuit_name,
+				    crossbar_model_get(config->model)->subcircuit_name,
 				    resistances[row * columns + column]) < 0)
 				return -1;
 		}
@@ -182,7 +183,8 @@ static int write_memristor_array(FILE *file,
 	return 0;
 }
 
-static int write_column_loads(FILE *file, const online_crossbar_config *config)
+static int write_column_loads(FILE *file,
+			      const spires_crossbar_readout_config *config)
 {
 	size_t columns = config->num_outputs * 2;
 
@@ -198,10 +200,15 @@ static int write_column_loads(FILE *file, const online_crossbar_config *config)
 	return 0;
 }
 
-int generate_crossbar_netlist(const online_crossbar_config *config,
+int generate_crossbar_netlist(const spires_crossbar_readout_config *config,
+			      const char *netlist_path,
 			      const double *resistances)
 {
-	FILE *file = fopen(config->netlist_path, "w");
+	if (!crossbar_model_get(config->model)) {
+		return -1;
+	}
+
+	FILE *file = fopen(netlist_path, "w");
 
 	if (!file)
 		return -1;

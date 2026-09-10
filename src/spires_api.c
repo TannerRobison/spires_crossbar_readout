@@ -147,20 +147,19 @@ double *spires_run(spires_reservoir *r, const double *input_series, size_t serie
 }
 
 #ifdef SPIRES_ENABLE_CROSSBAR_READOUT
-spires_status spires_run_crossbar_readout(
-    const online_crossbar_config *config, spires_reservoir *reservoir,
+spires_status spires_run_crossbar_readout_into(
+    const spires_crossbar_readout_config *config, spires_reservoir *reservoir,
     const double *input_series, size_t series_length, double *buffer)
 {
-    return run_crossbar_readout(config, reservoir, input_series, series_length,
-                                buffer);
+    return run_crossbar_readout_into(config, reservoir, input_series,
+                                     series_length, buffer);
 }
 
-double *spires_run_crossbar_readout_into(
-    const online_crossbar_config *config, spires_reservoir *reservoir,
+double *spires_run_crossbar_readout(
+    const spires_crossbar_readout_config *config, spires_reservoir *reservoir,
     const double *input_series, size_t series_length)
 {
-    return run_crossbar_readout_into(config, reservoir, input_series,
-                                     series_length);
+    return run_crossbar_readout(config, reservoir, input_series, series_length);
 }
 #endif
 

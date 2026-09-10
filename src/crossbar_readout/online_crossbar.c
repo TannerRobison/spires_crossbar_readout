@@ -3,6 +3,7 @@
 #include <spires.h>
 
 #include "crossbar_circuit.h"
+#include "crossbar_models.h"
 #include "online_crossbar.h"
 
 #include <stdbool.h>
@@ -21,7 +22,8 @@ typedef struct Online_Crossbar Online_Crossbar;
 static pthread_mutex_t ngspice_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct Online_Crossbar {
-	online_crossbar_config config;
+	spires_crossbar_readout_config config;
+	const char *netlist_path;
 	double *resistances;
 	conductance_mapping mapping;
 	double *state_ring;
@@ -40,8 +42,9 @@ struct Online_Crossbar {
 	pthread_cond_t progress;
 };
 
-static int online_crossbar_init(const online_crossbar_config *config,
+static int online_crossbar_init(const spires_crossbar_readout_config *config,
 				const spires_reservoir *reservoir,
+				const char *netlist_path,
 				Online_Crossbar **crossbar_out);
 
 static int online_crossbar_start(Online_Crossbar *crossbar);
@@ -55,7 +58,7 @@ static int online_crossbar_finish(Online_Crossbar *crossbar,
 
 static void online_crossbar_destroy(Online_Crossbar *crossbar);
 
-spires_status run_crossbar_readout_into(const online_crossbar_config *config,
+spires_status run_crossbar_readout_into(const spires_crossbar_readout_config *config,
 					spires_reservoir *reservoir,
 					const double *input_series,
 					size_t series_length, double *buffer)
@@ -63,8 +66,8 @@ spires_status run_crossbar_readout_into(const online_crossbar_config *config,
 	// validating configs
 	if (!config || !reservoir || !input_series || series_length == 0 ||
 	    config->num_neurons == 0 || config->num_outputs == 0 ||
-	    config->num_timesteps != series_length || !config->model_path ||
-	    !config->subcircuit_name || !buffer) {
+	    config->num_timesteps != series_length ||
+	    !crossbar_model_get(config->model) || !buffer) {
 		return SPIRES_ERR_INVALID_ARG;
 	}
 	if (config->num_neurons > SIZE_MAX / sizeof(double)) {
@@ -75,10 +78,6 @@ spires_status run_crossbar_readout_into(const online_crossbar_config *config,
 	    spires_num_inputs(reservoir) == 0) {
 		return SPIRES_ERR_INVALID_ARG;
 	}
-
-	/* Keep the caller's settings immutable while supplying the temporary
-	 * netlist path required by the ngspice control flow. */
-	online_crossbar_config online_config = *config;
 
 	Online_Crossbar *crossbar = NULL;
 	double *state = malloc(config->num_neurons * sizeof(*state));
@@ -95,14 +94,14 @@ spires_status run_crossbar_readout_into(const online_crossbar_config *config,
 		unlink(netlist_path);
 		return SPIRES_ERR_INTERNAL;
 	}
-	online_config.netlist_path = netlist_path;
 	/* libngspice keeps process-global state, so independent readouts must
 	 * not initialize or drive it concurrently. */
 	pthread_mutex_lock(&ngspice_mutex);
 
 	// starting the crossbar
 	if (spires_reservoir_reset(reservoir) != SPIRES_OK ||
-	    online_crossbar_init(&online_config, reservoir, &crossbar) != 0 ||
+	    online_crossbar_init(config, reservoir, netlist_path,
+				 &crossbar) != 0 ||
 	    online_crossbar_start(crossbar) != 0) {
 		free(state);
 		online_crossbar_destroy(crossbar);
@@ -148,7 +147,7 @@ spires_status run_crossbar_readout_into(const online_crossbar_config *config,
 	return status == 0 ? SPIRES_OK : SPIRES_ERR_INTERNAL;
 }
 
-double *run_crossbar_readout(const online_crossbar_config *config,
+double *run_crossbar_readout(const spires_crossbar_readout_config *config,
 			     spires_reservoir *reservoir,
 			     const double *input_series, size_t series_length)
 {
@@ -164,7 +163,7 @@ double *run_crossbar_readout(const online_crossbar_config *config,
 		return NULL;
 	}
 
-	if (run_crossbar_readout(config, reservoir, input_series, series_length,
+	if (run_crossbar_readout_into(config, reservoir, input_series, series_length,
 				 buffer) != SPIRES_OK) {
 		free(buffer);
 		return NULL;
@@ -429,7 +428,7 @@ static int callback_data(pvecvaluesall values, int count, int ident,
 }
 
 /********** Crossbar Control **********/
-static int config_is_valid(const online_crossbar_config *config)
+static int config_is_valid(const spires_crossbar_readout_config *config)
 {
 	if (!config || config->num_neurons == 0 || config->num_outputs == 0 ||
 	    config->num_timesteps == 0 || !isfinite(config->time_step) ||
@@ -438,8 +437,8 @@ static int config_is_valid(const online_crossbar_config *config)
 	    !isfinite(config->load_resistance) ||
 	    config->load_resistance <= 0.0 || !isfinite(config->r_on) ||
 	    !isfinite(config->r_off) || config->r_on <= 0.0 ||
-	    config->r_off <= config->r_on || !config->model_path ||
-	    !config->subcircuit_name || !config->netlist_path) {
+	    config->r_off <= config->r_on ||
+	    !crossbar_model_get(config->model)) {
 		return 0;
 	}
 
@@ -456,15 +455,16 @@ static int config_is_valid(const online_crossbar_config *config)
 }
 
 // allocates the online crossbar and generates its ngspice netlist
-static int online_crossbar_init(const online_crossbar_config *config,
+static int online_crossbar_init(const spires_crossbar_readout_config *config,
 				const spires_reservoir *reservoir,
+				const char *netlist_path,
 				Online_Crossbar **crossbar_out)
 {
 	if (!crossbar_out) {
 		return -1;
 	}
 	*crossbar_out = NULL;
-	if (!reservoir || !config_is_valid(config)) {
+	if (!reservoir || !netlist_path || !config_is_valid(config)) {
 		return -1;
 	}
 
@@ -473,6 +473,7 @@ static int online_crossbar_init(const online_crossbar_config *config,
 		return -1;
 	}
 	crossbar->config = *config;
+	crossbar->netlist_path = netlist_path;
 	if (pthread_mutex_init(&crossbar->mutex, NULL) != 0) {
 		goto fail;
 	}
@@ -499,7 +500,7 @@ static int online_crossbar_init(const online_crossbar_config *config,
 		goto fail;
 	}
 
-	if (generate_crossbar_netlist(&crossbar->config,
+	if (generate_crossbar_netlist(&crossbar->config, crossbar->netlist_path,
 				      crossbar->resistances) != 0) {
 		goto fail;
 	}
@@ -535,7 +536,7 @@ static int online_crossbar_start(Online_Crossbar *crossbar)
 
 	char command[4096];
 	int written = snprintf(command, sizeof(command), "source %s",
-			       crossbar->config.netlist_path);
+			       crossbar->netlist_path);
 	if (written < 0 || (size_t)written >= sizeof(command) ||
 	    ngSpice_Command(command) != 0) {
 		ngSpice_Reset();

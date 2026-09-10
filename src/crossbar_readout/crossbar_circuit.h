@@ -23,7 +23,8 @@ int decode_crossbar_output(size_t num_neurons, size_t num_outputs,
 			   const conductance_mapping *mapping,
 			   double row_voltage_scaler, double *decoded_outputs);
 
-int generate_crossbar_netlist(const online_crossbar_config *config,
+int generate_crossbar_netlist(const spires_crossbar_readout_config *config,
+			      const char *netlist_path,
 			      const double *resistances);
 
 #endif
